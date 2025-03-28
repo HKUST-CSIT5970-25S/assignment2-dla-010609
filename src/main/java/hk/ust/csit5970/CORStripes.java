@@ -29,7 +29,7 @@ public class CORStripes extends Configured implements Tool {
 	private static final Logger LOG = Logger.getLogger(CORStripes.class);
 
 	/*
-	 * TODO: write your first-pass Mapper here.
+	 * TODO: write your first-pass Mapper here
 	 */
 	private static class CORMapper1 extends
 			Mapper<LongWritable, Text, Text, IntWritable> {
@@ -43,11 +43,35 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			while (doc_tokenizer.hasMoreTokens()) {
+
+		       		String word = doc_tokenizer.nextToken();
+
+		        	if (word_set.containsKey(word)) {
+
+		            		word_set.put(word, word_set.get(word) + 1);
+
+		        	} else {
+
+		            		word_set.put(word, 1);
+
+		        	}
+
+		    	}
+
+
+
+		    	for (Map.Entry<String, Integer> entry : word_set.entrySet()) {
+
+		        	context.write(new Text(entry.getKey()), new IntWritable(entry.getValue()));
+
+		    	}
+
 		}
 	}
 
 	/*
-	 * TODO: Write your first-pass reducer here.
+	 * TODO: Write your first-pass reducer here
 	 */
 	private static class CORReducer1 extends
 			Reducer<Text, IntWritable, Text, IntWritable> {
@@ -56,11 +80,20 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			int sum = 0;
+
+		    	for (IntWritable val : values) {
+
+		        	sum += val.get();
+
+		    	}
+
+		    	context.write(key, new IntWritable(sum));			
 		}
 	}
 
 	/*
-	 * TODO: Write your second-pass Mapper here.
+	 * TODO: write your second-pass Mapper here
 	 */
 	public static class CORStripesMapper2 extends Mapper<LongWritable, Text, Text, MapWritable> {
 		@Override
@@ -75,11 +108,27 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			MapWritable mapWritable = new MapWritable();
+			for (String word : sorted_word_set) {
+				for (String coWord : sorted_word_set) {
+	               			if (!word.equals(coWord)) {
+	                			IntWritable count = (IntWritable) mapWritable.get(new Text(coWord));
+	                   		 	if (count == null) {
+	                        			mapWritable.put(new Text(coWord), new IntWritable(1));
+	                    			}
+	                    			else {
+	                    				count.set(count.get() + 1);
+	                    			}
+					}
+				}
+			context.write(new Text(word), mapWritable);
+			mapWritable.clear();
+			}
 		}
 	}
 
 	/*
-	 * TODO: Write your second-pass Combiner here.
+	 * TODO: write your second-pass Combiner here
 	 */
 	public static class CORStripesCombiner2 extends Reducer<Text, MapWritable, Text, MapWritable> {
 		static IntWritable ZERO = new IntWritable(0);
@@ -89,11 +138,25 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			MapWritable resultMap = new MapWritable();
+			for (MapWritable value : values) {
+				for (Map.Entry<Writable, Writable> entry : value.entrySet()) {
+					IntWritable count = (IntWritable) entry.getValue();
+					IntWritable existingCount = (IntWritable) resultMap.get(entry.getKey());
+					if (existingCount == null) {
+						resultMap.put(entry.getKey(), new IntWritable(count.get()));
+					}
+					else {
+	                    			existingCount.set(existingCount.get() + count.get());
+	                		}
+				}
+			}
+			context.write(key,resultMap);
 		}
 	}
 
 	/*
-	 * TODO: Write your second-pass Reducer here.
+	 * TODO: write your second-pass Reducer here
 	 */
 	public static class CORStripesReducer2 extends Reducer<Text, MapWritable, PairOfStrings, DoubleWritable> {
 		private static Map<String, Integer> word_total_map = new HashMap<String, Integer>();
@@ -135,13 +198,43 @@ public class CORStripes extends Configured implements Tool {
 		}
 
 		/*
-		 * TODO: Write your second-pass Reducer here.
+		 * TODO: write your second-pass Reducer here
 		 */
 		@Override
 		protected void reduce(Text key, Iterable<MapWritable> values, Context context) throws IOException, InterruptedException {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			double totalCount = 0.0;
+		        Map<String, Integer> coOccurrences = new HashMap<>();
+		        
+		        for (MapWritable value : values) {
+		            for (Writable coWord : value.keySet()) {
+		                IntWritable count = (IntWritable) value.get(coWord);
+		                String coWordStr = coWord.toString();
+		                
+		                // Update coOccurrences map without using getOrDefault
+		                if (coOccurrences.containsKey(coWordStr)) {
+		                    coOccurrences.put(coWordStr, coOccurrences.get(coWordStr) + count.get());
+		                } else {
+		                    coOccurrences.put(coWordStr, count.get());
+		                }
+		            }
+		            totalCount++; // Count occurrences of the current key
+		        }
+		
+		        // Calculate correlation coefficient for each co-occurring word
+		        for (Map.Entry<String, Integer> entry : coOccurrences.entrySet()) {
+		            String coWord = entry.getKey();
+		            int coFreq = entry.getValue();
+		            int totalFreq = wordTotalMap.containsKey(coWord) ? wordTotalMap.get(coWord) : 0;
+		
+		            // Ensure totalCount and totalFreq are not zero to avoid division by zero
+		            if (totalCount > 0 && totalFreq > 0) {
+		                double correlation = (double) coFreq / (totalCount * totalFreq);
+		                context.write(new PairOfStrings(key.toString(), coWord), new DoubleWritable(correlation));
+		            }
+		        }
 		}
 	}
 

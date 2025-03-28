@@ -1,8 +1,7 @@
 package hk.ust.csit5970;
-
 import java.io.IOException;
 import java.util.Arrays;
-
+import java.util.Iterator;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.GnuParser;
@@ -27,15 +26,13 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
-
 /**
  * Compute the bigram count using "pairs" approach
  */
 public class BigramFrequencyPairs extends Configured implements Tool {
 	private static final Logger LOG = Logger.getLogger(BigramFrequencyPairs.class);
-
 	/*
-	 * TODO: write your Mapper here.
+	 * TODO: write your Mapper here
 	 */
 	private static class MyMapper extends
 			Mapper<LongWritable, Text, PairOfStrings, IntWritable> {
@@ -48,22 +45,37 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 		public void map(LongWritable key, Text value, Context context)
 				throws IOException, InterruptedException {
 			String line = ((Text) value).toString();
-			String[] words = line.trim().split("\\s+");
-			
+			String[] words = line.trim().split("\\s+");			
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			if (words.length > 1){
+				String previous_word = words[0];
+				for (int i = 1; i < words.length; i++) {
+					String w = words[i];
+					// Skip empty words
+					if (w.length() == 0) {
+						continue;
+					}
+					BIGRAM.set(previous_word, w);
+					context.write(BIGRAM, ONE);
+					BIGRAM.set(previous_word,"");
+					context.write(BIGRAM, ONE);
+					previous_word = w;
+				}
+			}
 		}
 	}
 
 	/*
-	 * TODO: Write your reducer here.
+	 * TODO: Write your reducer here
 	 */
 	private static class MyReducer extends
 			Reducer<PairOfStrings, IntWritable, PairOfStrings, FloatWritable> {
 
 		// Reuse objects.
 		private final static FloatWritable VALUE = new FloatWritable();
+		private HashMapStringIntWritable marginalCounts = new HashMapStringIntWritable(); //added
 
 		@Override
 		public void reduce(PairOfStrings key, Iterable<IntWritable> values,
@@ -71,6 +83,32 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			int count = 0;
+		    Iterator<IntWritable> iter = values.iterator();
+		    while (iter.hasNext()) {
+		        count += iter.next().get();
+		    }
+		    if (key.getRightElement().equals("")) {
+		        // Update marginal counts for the left element
+		        marginalCounts.put(key.getLeftElement(), count);
+		        int marginalCount = marginalCounts.get(key.getLeftElement());
+		        VALUE.set((float)marginalCount);
+		        context.write(key,VALUE);
+		        
+		    } else {
+		    	// Calculate and output relative frequency for bigrams
+		        if (marginalCounts.containsKey(key.getLeftElement())) {
+		            int marginalCount = marginalCounts.get(key.getLeftElement());
+		            if (marginalCount > 0) {
+		                VALUE.set((float) count / marginalCount);
+		                context.write(key, VALUE);
+		            }else {
+                LOG.warn("Marginal count is zero for key: " + key.getLeftElement());
+            } 
+		        } else {
+            LOG.warn("No marginal count found for key: " + key.getLeftElement());
+		        }
+		    }
 		}
 	}
 	
@@ -84,6 +122,12 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+		    int sum = 0;
+		    for (IntWritable value : values) {
+		        sum += value.get();
+		    }
+		    SUM.set(sum);
+		    context.write(key, SUM);
 		}
 	}
 

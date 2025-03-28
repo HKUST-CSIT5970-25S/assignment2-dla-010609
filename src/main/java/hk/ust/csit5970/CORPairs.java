@@ -39,7 +39,7 @@ public class CORPairs extends Configured implements Tool {
 	private static final Logger LOG = Logger.getLogger(CORPairs.class);
 
 	/*
-	 * TODO: Write your first-pass Mapper here.
+	 * TODO: write your first-pass Mapper here
 	 */
 	private static class CORMapper1 extends
 			Mapper<LongWritable, Text, Text, IntWritable> {
@@ -53,11 +53,23 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
-		}
+			while (doc_tokenizer.hasMoreTokens()) {
+		        	String word = doc_tokenizer.nextToken();
+		        	if (word_set.containsKey(word)) {
+		            	word_set.put(word, word_set.get(word) + 1);
+		        	} else {
+		            	word_set.put(word, 1);
+		        	}
+			}
+
+		    	for (Map.Entry<String, Integer> entry : word_set.entrySet()) {
+		        	context.write(new Text(entry.getKey()), new IntWritable(entry.getValue()));
+		    	}
+	      	}
 	}
 
 	/*
-	 * TODO: Write your first-pass reducer here.
+	 * TODO: Write your first-pass reducer here
 	 */
 	private static class CORReducer1 extends
 			Reducer<Text, IntWritable, Text, IntWritable> {
@@ -66,14 +78,21 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			int sum = 0;
+		    	for (IntWritable val : values) {
+		        	sum += val.get();
+		    }
+		    context.write(key, new IntWritable(sum));
 		}
 	}
 
 
 	/*
-	 * TODO: Write your second-pass Mapper here.
+	 * TODO: write your second-pass Mapper here
 	 */
 	public static class CORPairsMapper2 extends Mapper<LongWritable, Text, PairOfStrings, IntWritable> {
+		private final static IntWritable ONE = new IntWritable(1);
+	    private final static PairOfStrings pair = new PairOfStrings();
 		@Override
 		protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
 			// Please use this tokenizer! DO NOT implement a tokenizer by yourself!
@@ -81,11 +100,26 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			HashSet<String> uniqueWords = new HashSet<String>();
+		        while (doc_tokenizer.hasMoreTokens()) {
+		            uniqueWords.add(doc_tokenizer.nextToken());
+		        }
+		        String[] words = uniqueWords.toArray(new String[0]);
+		        for (int i = 0; i < words.length; i++) {
+		            for (int j = i + 1; j < words.length; j++) {
+		                String wordA = words[i];
+		                String wordB = words[j];
+		                String first = wordA.compareTo(wordB) < 0 ? wordA : wordB;
+		                String second = wordA.compareTo(wordB) < 0 ? wordB : wordA;
+		                pair.set(first,second);
+		                context.write(pair, ONE); // Emit pair with count 1
+		            }
+			}     
 		}
 	}
 
 	/*
-	 * TODO: Write your second-pass Combiner here.
+	 * TODO: write your second-pass Combiner here
 	 */
 	private static class CORPairsCombiner2 extends Reducer<PairOfStrings, IntWritable, PairOfStrings, IntWritable> {
 		@Override
@@ -93,11 +127,17 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			int sum = 0;
+			for (IntWritable value : values) {
+	            		sum += value.get(); // Sum up counts
+	        	}
+			context.write(key, new IntWritable(sum));
+
 		}
 	}
 
 	/*
-	 * TODO: Write your second-pass Reducer here.
+	 * TODO: write your second-pass Reducer here
 	 */
 	public static class CORPairsReducer2 extends Reducer<PairOfStrings, IntWritable, PairOfStrings, DoubleWritable> {
 		private final static Map<String, Integer> word_total_map = new HashMap<String, Integer>();
@@ -138,13 +178,24 @@ public class CORPairs extends Configured implements Tool {
 		}
 
 		/*
-		 * TODO: write your second-pass Reducer here.
+		 * TODO: write your second-pass Reducer here
 		 */
 		@Override
 		protected void reduce(PairOfStrings key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			int freqAB = 0;
+			for (IntWritable value : values) {
+				freqAB += value.get();
+		    	}
+
+		    	Integer freqA = word_total_map.get(key.getLeftElement());
+		    	Integer freqB = word_total_map.get(key.getRightElement());
+		   	if (freqA != null && freqB != null && freqA > 0 && freqB > 0) {
+		        	double correlation = (double) freqAB / (freqA * freqB);
+		        	context.write(key, new DoubleWritable(correlation));
+		    	}
 		}
 	}
 
